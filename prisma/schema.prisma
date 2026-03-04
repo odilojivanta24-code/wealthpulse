@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AssetType {
+  STOCK
+  CRYPTO
+  BOND
+  ETF
+  GOLD
+  CASH
+}
+
+enum TxType {
+  BUY
+  SELL
+  DIVIDEND
+  COUPON
+  FEE
+  TAX
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum PriceInterval {
+  EOD
+  MIN15
+  HOUR1
+}
+
+enum AlertType {
+  TAKE_PROFIT
+  STOP_LOSS
+}
+
+enum AlertStatus {
+  ACTIVE
+  PAUSED
+  TRIGGERED
+  DISMISSED
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  baseCurrency  String    @default("IDR")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts     Account[]
+  sessions     Session[]
+  assets       Asset[]
+  transactions Transaction[]
+  alerts       AlertRule[]
+  watchlist    Watchlist[]
+}
+
+model Asset {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  type          AssetType
+  symbol        String
+  name          String?
+  exchange      String?
+  currency      String    @default("IDR")
+  isActive      Boolean   @default(true)
+  avgCost       Decimal?  @db.Decimal(24, 10)
+  quantity      Decimal?  @db.Decimal(24, 10)
+  targetPrice   Decimal?  @db.Decimal(24, 10)
+  stopLossPrice Decimal?  @db.Decimal(24, 10)
+  notes         String?
+  couponRate    Decimal?  @db.Decimal(8, 4)
+  maturityDate  DateTime?
+  faceValue     Decimal?  @db.Decimal(24, 10)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  transactions  Transaction[]
+  prices        PricePoint[]
+  alerts        AlertRule[]
+  @@unique([userId, symbol, exchange])
+  @@index([userId, type])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  assetId   String?
+  user      User     @relation(fields: [userId], references: [id])
+  asset     Asset?   @relation(fields: [assetId], references: [id])
+  type      TxType
+  date      DateTime
+  quantity  Decimal? @db.Decimal(24, 10)
+  price     Decimal? @db.Decimal(24, 10)
+  amount    Decimal? @db.Decimal(24, 10)
+  currency  String?
+  fee       Decimal? @db.Decimal(24, 10)
+  tax       Decimal? @db.Decimal(24, 10)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, date])
+  @@index([assetId, date])
+}
+
+model PricePoint {
+  id        String        @id @default(cuid())
+  assetId   String
+  asset     Asset         @relation(fields: [assetId], references: [id])
+  interval  PriceInterval @default(EOD)
+  ts        DateTime
+  close     Decimal       @db.Decimal(24, 10)
+  open      Decimal?      @db.Decimal(24, 10)
+  high      Decimal?      @db.Decimal(24, 10)
+  low       Decimal?      @db.Decimal(24, 10)
+  volume    Decimal?      @db.Decimal(24, 10)
+  createdAt DateTime      @default(now())
+  @@unique([assetId, interval, ts])
+  @@index([assetId, ts])
+}
+
+model FxRate {
+  id    String   @id @default(cuid())
+  base  String
+  quote String
+  ts    DateTime
+  rate  Decimal  @db.Decimal(24, 10)
+  @@unique([base, quote, ts])
+  @@index([base, quote, ts])
+}
+
+model AlertRule {
+  id          String        @id @default(cuid())
+  userId      String
+  assetId     String
+  user        User          @relation(fields: [userId], references: [id])
+  asset       Asset         @relation(fields: [assetId], references: [id])
+  type        AlertType
+  status      AlertStatus   @default(ACTIVE)
+  threshold   Decimal       @db.Decimal(24, 10)
+  lastChecked DateTime?
+  lastPrice   Decimal?      @db.Decimal(24, 10)
+  interval    PriceInterval @default(EOD)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  events      AlertEvent[]
+  @@index([userId, status])
+  @@index([assetId, status])
+}
+
+model AlertEvent {
+  id          String    @id @default(cuid())
+  alertRuleId String
+  alertRule   AlertRule @relation(fields: [alertRuleId], references: [id])
+  triggeredAt DateTime  @default(now())
+  price       Decimal   @db.Decimal(24, 10)
+  message     String?
+  @@index([alertRuleId, triggeredAt])
+}
+
+model Watchlist {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  symbol    String
+  name      String?
+  type      AssetType
+  exchange  String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  @@unique([userId, symbol, exchange])
+  @@index([userId])
+}
